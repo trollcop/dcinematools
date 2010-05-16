@@ -6,12 +6,12 @@ MXFSource is an [http://avisynth.org/ AviSynth] plugin to load clear or encrypte
 
 *Note*: Because AviSynth does not support XYZ12 color space, JP2K decode output is limited to RGB32.
 
-For proper XYZ12 to RGB conversion, [http://www.mainconcept.com/products/sdks/video/jpeg-2000.html Main Concept JPEG2000 SDK] j2k_dec.dll is recommended, otherwise [http://www.openjpeg.org/ OpenJPEG] is used.
+For proper XYZ12 to RGB conversion, [http://www.mainconcept.com/products/sdks/video/jpeg-2000.html Main Concept JPEG2000 SDK] dec_j2k.dll is recommended, otherwise [http://www.openjpeg.org/ OpenJPEG] is used.
 
 = Installation =
 
  * Copy MXFSource.dll to AviSynth plugins dir
- * _optional_ Copy j2k_dec.dll (from MainConcept SDK) to same dir.
+ * _optional_ Copy *dec_j2k.dll* (from MainConcept SDK) to same dir.
 
 = Usage =
 
