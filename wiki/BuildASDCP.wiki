@@ -4,7 +4,7 @@
 = Prerequisites =
 
   * [http://www.slproweb.com/products/Win32OpenSSL.html OpenSSL-Win32] - download ~8MB Installer edition of latest version
-  * [Xerces-C http://xerces.apache.org/xerces-c/download.cgi Xerces-C] - download 3.x.x .zip
+  * [http://xerces.apache.org/xerces-c/download.cgi Xerces-C] - download 3.x.x .zip
 
 = Building =
 
