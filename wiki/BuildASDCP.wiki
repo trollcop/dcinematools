@@ -1,0 +1,21 @@
+#summary Building asdcp-lib under Visual Studio 2008
+#labels Phase-Deploy
+
+= Prerequisites =
+
+  * [http://www.slproweb.com/products/Win32OpenSSL.html OpenSSL-Win32] - download 8MB Installer edition of latest version
+  * [Xerces-C http://xerces.apache.org/xerces-c/download.cgi] - download 3.x.x .zip
+
+= Building =
+
+ # Make a dir, ex. d:\sdk
+ # Install OpenSSL somewhere, ex d:\sdk\OpenSSL. Add *OpenSSL\include* to VC include path, add *OpenSSL\lib\VC\static* to VC Lib path.
+ # Unzip xerces-c and put in *d:\sdk\xerces-c*
+ # Build 'Static Release' of xerces-c.
+ # Make a *xerces-c\lib* and move *Build\Win32\VC9\Static Release\xerces-c_static_3.lib* there.
+ # Unzip asdcp build files into d:\sdk\asdcp
+ # Download latest [http://www.cinecert.com/asdcplib/ asdcp-lib] and copy contents of 'src' dir into d:\sdk\asdcp\src.
+ # Build 'Release' of asdcp.
+ # Find release bits in asdcp\Release
+
+This results in static MT runtime, manifest-less build of asdcp-lib and asdcp-test.exe
