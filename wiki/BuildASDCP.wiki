@@ -4,15 +4,16 @@
 = Prerequisites =
 
   * [http://www.slproweb.com/products/Win32OpenSSL.html OpenSSL-Win32] - download ~8MB Installer edition of latest version
-  * [http://xerces.apache.org/xerces-c/download.cgi Xerces-C] - download 3.x.x .zip
+  * [http://sourceforge.net/projects/expat/files/ expat XML Parser] - download 2.0.1 .tgz
+  * Xerces-C is no longer recommended as it does not properly work (on Windows, anyway).
 
 = Building =
 
  # Make a dir, ex. d:\sdk
  # Install OpenSSL somewhere, ex d:\sdk\OpenSSL. Add *OpenSSL\include* to VC include path, add *OpenSSL\lib\VC\static* to VC Lib path.
- # Unzip xerces-c and put in *d:\sdk\xerces-c*
- # Build 'Static Release' of xerces-c.
- # Make a *xerces-c\lib* and move *Build\Win32\VC9\Static Release\xerces-c_static_3.lib* there.
+ # Unzip expat and put in *d:\sdk\expat
+ # Import 'expat.dsw' into current Visual Studio.
+ # Build 'Release' of 'expat_static' project.
  # Unzip asdcp build files into d:\sdk\asdcp
  # Download latest [http://www.cinecert.com/asdcplib/ asdcp-lib] and copy contents of 'src' dir into d:\sdk\asdcp\src.
  # Build 'Release' of asdcp.
