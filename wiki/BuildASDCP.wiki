@@ -13,6 +13,7 @@
  # Install OpenSSL somewhere, ex d:\sdk\OpenSSL. Add *OpenSSL\include* to VC include path, add *OpenSSL\lib\VC\static* to VC Lib path.
  # Unzip expat and put in *d:\sdk\expat*
  # Import 'expat.dsw' into current Visual Studio.
+ # Edit expat_external.h, and around line 62, comment out '__declspec(dllimport)'. We're not building expat as DLL.
  # Build 'Release' of 'expat_static' project.
  # Unzip asdcp build files into *d:\sdk\asdcp*
  # Download latest [http://www.cinecert.com/asdcplib/ asdcp-lib] and copy contents of 'src' dir into *d:\sdk\asdcp\src*.
