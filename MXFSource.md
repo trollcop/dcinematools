@@ -1,0 +1,21 @@
+# Introduction #
+
+MXFSource is an [AviSynth](http://avisynth.org/) plugin to load clear or encrypted MXF containing 2D or 3D JP2K or PCM essence for editing.
+
+**Note**: Because AviSynth does not support XYZ12 color space, JP2K decode output is limited to RGB32.
+
+**Note**: Using OpenJPEG instead of MainConcept JPEG2000 decoder will **not** correct the colorspace. Patches for that are welcome.
+
+For proper XYZ12 to RGB conversion, [Main Concept JPEG2000 SDK](http://www.mainconcept.com/products/sdks/video/jpeg-2000.html) dec\_j2k.dll is recommended, otherwise [OpenJPEG](http://www.openjpeg.org/) is used.
+
+# Installation #
+
+  * Copy MXFSource.dll to AviSynth plugins dir
+  * _optional_ Copy **dec\_j2k.dll** (from MainConcept SDK) to same dir.
+
+# Usage #
+
+```
+l = MXFSource("d:\dcp\test.mxf", entrypoint=110, key="00112233445566778899aabbccddeeff")
+r = MXFSource("d:\dcp\test.mxf", entrypoint=110, key="00112233445566778899aabbccddeeff", eye="right")
+```
