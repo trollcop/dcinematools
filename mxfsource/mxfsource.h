@@ -15,23 +15,38 @@
 #include <KM_prng.h>
 #include <AS_DCP.h>
 #include <openjpeg.h>
+
+#ifdef USE_MAINCONCEPT
 #include <dec_j2k.h>
+typedef void* (MC_EXPORT_API *pMJ2_DecoderNew)(mj2_init_params_t *init_params);
+typedef void (MC_EXPORT_API *pMJ2_DecoderRelease)(void *instance, uint32_t low_delay);
+typedef uint32_t(MC_EXPORT_API *pMJ2_DecompressBuffer)(void                *instance,
+    mj2_decode_params_t *params,
+    unsigned char       *pb_src,
+    uint32_t             src_buf_len,
+    unsigned char       *pb_dst,
+    uint32_t             fourcc,
+    int32_t              stride,
+    uint32_t             width,
+    uint32_t             height);
+#endif // USE_MAINCONCEPT
 
 using namespace ASDCP;
 
 const ui32_t FRAME_BUFFER_SIZE = 4 * Kumu::Megabyte;
 
-typedef void* (MC_EXPORT_API *pMJ2_DecoderNew)(mj2_init_params_t *init_params);
-typedef void (MC_EXPORT_API *pMJ2_DecoderRelease)(void *instance, uint32_t low_delay);
-typedef uint32_t (MC_EXPORT_API *pMJ2_DecompressBuffer)(void                *instance,
-													   mj2_decode_params_t *params,
-													   unsigned char       *pb_src,
-													   uint32_t             src_buf_len, 
-													   unsigned char       *pb_dst,
-													   uint32_t             fourcc,
-													   int32_t              stride,
-													   uint32_t             width,
-													   uint32_t             height);
+extern "C" {
+
+    typedef struct
+    {
+        OPJ_UINT8* pData; //Our data.
+        OPJ_SIZE_T dataSize; //How big is our data.
+        OPJ_SIZE_T offset; //Where are we currently in our data.
+    } opj_memory_stream;
+
+    opj_stream_t* opj_stream_create_default_memory_stream(opj_memory_stream* p_memoryStream, OPJ_BOOL p_is_read_stream);
+
+}
 
 class GetSample
 {
@@ -105,6 +120,7 @@ private:
 
     // MainConcept stuff
     HANDLE m_hMDec;
+#ifdef USE_MAINCONCEPT
     pMJ2_DecoderNew m_pMJ2_DecoderNew;
     pMJ2_DecoderRelease m_pMJ2_DecoderRelease;
     pMJ2_DecompressBuffer m_pMJ2_DecompressBuffer;
@@ -112,26 +128,28 @@ private:
     mj2_decode_params_t m_decode_params;
     void *m_decoder;
     BYTE *m_tmp;
+#endif
 
-    // OpenANUS stuff
-    opj_dinfo_t* o_dinfo;	/* handle to a decompressor */
-    opj_dparameters_t o_parameters;	/* decompression parameters */
-    opj_event_mgr_t o_event_mgr;		/* event manager */
+    // gamma, xyz>rgb conversion
+    int xyzgamma[4096];
+    int rgbgamma[4096];
+    int matrix[3][3];
 
-
-    int m_iDecoderMode;		// which decoder gets used = 0: openanus 1: mainconcept
+    int m_iDecoderMode;		// which decoder gets used = 0: openJPEG 1: mainconcept
     int m_iEntryPoint;		// for a/v offset stuff this is the entry point of clip
     int m_iFlags;		// stereo essence shit
 
 public:
 
-    MXFSource(const char *filename, const char *key, const bool hmac, int entrypoint, int eyephase, IScriptEnvironment *env);
+    MXFSource(const char *filename, const char *key, const bool hmac, int entrypoint, int eyephase, IScriptEnvironment *env, float ingamma, float outgamma);
     ~MXFSource();
 
     PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment *env);
     void __stdcall GetAudio(void *buf, __int64 start, __int64 count, IScriptEnvironment *env);
 
+#ifdef USE_MAINCONCEPT
     PVideoFrame __stdcall GetFrameMainConcept(IScriptEnvironment *env);
+#endif
     PVideoFrame __stdcall GetFrameOpenJPEG(IScriptEnvironment *env);
     bool __stdcall GetParity(int n) { return false; }
     void __stdcall SetCacheHints(int cachehints, int frame_range) { };

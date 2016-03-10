@@ -10,22 +10,30 @@ BOOL WINAPI DllMain(HINSTANCE hInstance, ULONG ulReason, LPVOID Reserved)
     return TRUE;
 }
 
-MXFSource::MXFSource(const char *filename, const char *key, const bool hmac, int entrypoint, int eyephase, IScriptEnvironment* env)
-    : m_decoder(NULL)
-    , o_dinfo(NULL)
-    , m_pSample(NULL)
+static void error_callback(const char *msg, void *client_data)
+{
+    OutputDebugStringA(msg);
+}
+
+
+MXFSource::MXFSource(const char *filename, const char *key, const bool hmac, int entrypoint, int eyephase, IScriptEnvironment* env, float ingamma, float outgamma)
+    : m_pSample(NULL)
     , m_iFlags(eyephase)
     , m_iEntryPoint(entrypoint)
     , m_FrameBuffer(FRAME_BUFFER_SIZE)
+#ifdef USE_MAINCONCEPT
+    , m_decoder(NULL)
     , m_pMJ2_DecoderNew(NULL)
     , m_pMJ2_DecoderRelease(NULL)
     , m_pMJ2_DecompressBuffer(NULL)
+#endif
     , m_iDecoderMode(0)
 {
     Result_t result = RESULT_OK;
+    int i;
 
     try {
-	m_pSample = new GetPCM(filename, entrypoint, env);
+        m_pSample = new GetPCM(filename, entrypoint, env);
     } catch (...) {
 	try {
 	    m_pSample = new GetSample2D(filename, entrypoint, env);
@@ -58,7 +66,8 @@ MXFSource::MXFSource(const char *filename, const char *key, const bool hmac, int
     // try to load mainconcept dll
     m_hMDec = LoadLibrary(pszPath);
     if (m_hMDec) {
-	m_pMJ2_DecoderNew = (pMJ2_DecoderNew)GetProcAddress((HMODULE)m_hMDec, _T("MJ2_DecoderNew"));
+#ifdef USE_MAINCONCEPT
+        m_pMJ2_DecoderNew = (pMJ2_DecoderNew)GetProcAddress((HMODULE)m_hMDec, _T("MJ2_DecoderNew"));
 	m_pMJ2_DecoderRelease = (pMJ2_DecoderRelease)GetProcAddress((HMODULE)m_hMDec, _T("MJ2_DecoderRelease"));
 	m_pMJ2_DecompressBuffer = (pMJ2_DecompressBuffer)GetProcAddress((HMODULE)m_hMDec, _T("MJ2_DecompressBuffer"));
 
@@ -72,32 +81,36 @@ MXFSource::MXFSource(const char *filename, const char *key, const bool hmac, int
 	m_decoder = m_pMJ2_DecoderNew(&m_init_params);
 	m_tmp = new BYTE[FRAME_BUFFER_SIZE * 4];
 	m_iDecoderMode = 1;
+#endif
     } else {
-	// OpenJPEG init
-	ZeroMemory(&o_event_mgr, sizeof(o_event_mgr));
-	o_event_mgr.error_handler = NULL; // error_callback;
-	o_event_mgr.warning_handler = NULL; // warning_callback;
-	o_event_mgr.info_handler = NULL; // info_callback;
+        // precalculate in/out gamma values
+        for (i = 0; i < 4096; i++) {
+            xyzgamma[i] = (int)(pow(i / 4095.0, ingamma) * 4095.0 + 0.5);
+            rgbgamma[i] = (int)(pow(i / 4095.0, outgamma) * 4095.0 + 0.5);
+        }
 
-	/* set decoding parameters to default values */
-	opj_set_default_decoder_parameters(&o_parameters);
-	o_parameters.decod_format = J2K_CFMT;
-	o_dinfo = opj_create_decompress(CODEC_J2K);
-	/* catch events using our callbacks and give a local context */
-	opj_set_event_mgr((opj_common_ptr)o_dinfo, &o_event_mgr, stderr);
-	/* setup the decoder decoding parameters using user parameters */
-	opj_setup_decoder(o_dinfo, &o_parameters);
+        // precalculate xyz>rgb conversion matrix
+        matrix[0][0] = (int)(3.2404542 * 4095.0 + 0.5);
+        matrix[0][1] = (int)(-1.5371385 * 4095.0 - 0.5);
+        matrix[0][2] = (int)(-0.4985314 * 4095.0 - 0.5);
+        matrix[1][0] = (int)(-0.9692660 * 4095.0 - 0.5);
+        matrix[1][1] = (int)(1.8760108 * 4095.0 + 0.5);
+        matrix[1][2] = (int)(0.0415560 * 4095.0 + 0.5);
+        matrix[2][0] = (int)(0.0556434 * 4095.0 + 0.5);
+        matrix[2][1] = (int)(-0.2040259 * 4095.0 - 0.5);
+        matrix[2][2] = (int)(1.0572252  * 4095.0 + 0.5);
     }
 }
 
 MXFSource::~MXFSource()
 {
+#ifdef USE_MAINCONCEPT
     if (m_decoder)
 	m_pMJ2_DecoderRelease(m_decoder, 1);
-    if (o_dinfo)
-	opj_destroy_decompress(o_dinfo);
+#endif
 }
 
+#ifdef USE_MAINCONCEPT
 PVideoFrame __stdcall MXFSource::GetFrameMainConcept(IScriptEnvironment* env)
 {
     VideoInfo vi = GetVideoInfo();
@@ -114,26 +127,55 @@ PVideoFrame __stdcall MXFSource::GetFrameMainConcept(IScriptEnvironment* env)
 
     return pvf;
 }
+#endif
 
 PVideoFrame __stdcall MXFSource::GetFrameOpenJPEG(IScriptEnvironment* env)
 {
     VideoInfo vi = GetVideoInfo();
     PVideoFrame pvf = env->NewVideoFrame(vi);
 
-    opj_cio_t *cio = NULL;
+    opj_codec_t *codec = NULL;
+    opj_memory_stream ms;
+    opj_stream_t *stream = NULL;
     opj_image_t *image = NULL;
+    opj_dparameters_t o_parameters;	/* decompression parameters */
+    OPJ_BOOL rv;
 
-    cio = opj_cio_open((opj_common_ptr)o_dinfo, m_FrameBuffer.Data(), m_FrameBuffer.Size());
-    image = opj_decode(o_dinfo, cio);
-    if (!image) {
-	opj_cio_close(cio);
-	return pvf;
+    ms.pData = m_FrameBuffer.Data();
+    ms.dataSize = m_FrameBuffer.Size();
+    ms.offset = 0;
+    stream = opj_stream_create_default_memory_stream(&ms, OPJ_TRUE);
+
+    // initialize decoder
+    opj_set_default_decoder_parameters(&o_parameters);
+    o_parameters.decod_format = J2K_CFMT;
+    codec = opj_create_decompress(OPJ_CODEC_J2K);
+
+    // catch events using our callbacks
+    opj_set_info_handler(codec, NULL, 0);
+    opj_set_warning_handler(codec, NULL, 0);
+    opj_set_error_handler(codec, error_callback, 0);
+
+    // setup the decoder decoding parameters using user parameters
+    opj_setup_decoder(codec, &o_parameters);
+
+    if (!opj_read_header(stream, codec, &image)) {
+        opj_stream_destroy(stream);
+        opj_image_destroy(image);
+        if (codec)
+            opj_destroy_codec(codec);
+        return pvf;
     }
 
-    int adjustR = 0, adjustG = 0, adjustB = 0;
-    adjustR = image->comps[0].prec - 8;
-    adjustG = image->comps[1].prec - 8;
-    adjustB = image->comps[2].prec - 8;
+    rv = opj_decode(codec, stream, image);
+    if (!rv) {
+        opj_stream_destroy(stream);
+        if (codec)
+            opj_destroy_codec(codec);
+        return pvf;
+    }
+    // end decompression (which does nothing, fucking opensauce LOL)
+    opj_end_decompress(codec, stream);
 
     int w = image->comps[0].w;	    
     int h = image->comps[0].h;
@@ -141,31 +183,56 @@ PVideoFrame __stdcall MXFSource::GetFrameOpenJPEG(IScriptEnvironment* env)
     BYTE *ptr = pvf->GetWritePtr();
     BYTE *m_ptr = ptr;
     int d_stride = pvf->GetPitch();
+    int j = 0;
 
-    for (int i = 0; i < w * h; i++) {
-	unsigned char rc, gc, bc;
-	int r, g, b;
+    for (int i = 0; i < d_stride / 4 * h; i++) {
+        if (i % (d_stride / 4) < w) {
+            int r, g, b;
+            int x, y, z;
 
-	r = image->comps[0].data[w * h - ((i) / (w) + 1) * w + (i) % (w)];
-	r += (image->comps[0].sgnd ? 1 << (image->comps[0].prec - 1) : 0);
-	rc = (unsigned char) ((r >> adjustR)+((r >> (adjustR-1))%2));
-	g = image->comps[1].data[w * h - ((i) / (w) + 1) * w + (i) % (w)];
-	g += (image->comps[1].sgnd ? 1 << (image->comps[1].prec - 1) : 0);
-	gc = (unsigned char) ((g >> adjustG)+((g >> (adjustG-1))%2));
-	b = image->comps[2].data[w * h - ((i) / (w) + 1) * w + (i) % (w)];
-	b += (image->comps[2].sgnd ? 1 << (image->comps[2].prec - 1) : 0);
-	bc = (unsigned char) ((b >> adjustB)+((b >> (adjustB-1))%2));
+            x = image->comps[0].data[w * h - ((j) / (w)+1) * w + (j) % (w)];
+            y = image->comps[1].data[w * h - ((j) / (w)+1) * w + (j) % (w)];
+            z = image->comps[2].data[w * h - ((j) / (w)+1) * w + (j) % (w)];
 
-	BYTE *pixel = ptr + i * 4;
-	pixel[0] = bc;
-	pixel[1] = gc;
-	pixel[2] = rc;
+            // apply input gamma
+            x = xyzgamma[x];
+            y = xyzgamma[y];
+            z = xyzgamma[z];
+
+            // xyz -> rgb matrix
+            r = (matrix[0][0] * x + matrix[0][1] * y + matrix[0][2] * z) >> 12;
+            g = (matrix[1][0] * x + matrix[1][1] * y + matrix[1][2] * z) >> 12;
+            b = (matrix[2][0] * x + matrix[2][1] * y + matrix[2][2] * z) >> 12;
+
+            // clipping
+            if (r > 4095) r = 4095; if (r < 0) r = 0;
+            if (g > 4095) g = 4095; if (g < 0) g = 0;
+            if (b > 4095) b = 4095; if (b < 0) b = 0;
+
+            // output gamma + bits
+            r = rgbgamma[r] >> 4; // /16 12bit->8bit
+            g = rgbgamma[g] >> 4;
+            b = rgbgamma[b] >> 4;
+
+            BYTE *pixel = ptr + i * 4;
+            pixel[0] = (BYTE)b;
+            pixel[1] = (BYTE)g;
+            pixel[2] = (BYTE)r;
+
+            j++;
+        } else {
+            BYTE *pixel = ptr + i * 4;
+            pixel[0] = 0;
+            pixel[1] = 0;
+            pixel[2] = 0;
+        }
     }
-
-    // todo: XYZ shit
 
     // free image data structure
     opj_image_destroy(image);
+    opj_stream_destroy(stream);
+    if (codec)
+        opj_destroy_codec(codec);
 
     return pvf;
 }
@@ -178,10 +245,12 @@ PVideoFrame MXFSource::GetFrame(int n, IScriptEnvironment* env)
 	    case 0:
 		return GetFrameOpenJPEG(env);
 		break;
-	    case 1:
+#ifdef USE_MAINCONCEPT
+            case 1:
 		return GetFrameMainConcept(env);
 		break;
-	}
+#endif
+        }
     } else {
 	if (result == RESULT_CHECKFAIL)
 	    env->ThrowError("Check value did not decrypt correctly. Check key passed to MXFSource()");
@@ -221,13 +290,15 @@ AVSValue __cdecl Create_MXFSource(AVSValue args, void*, IScriptEnvironment* env)
     const bool hmac = args[2].AsBool(false);
     const int entrypoint = args[3].AsInt(0);
     const char* eye = args[4].AsString("LEFT");
+    const float ingamma = (float)args[5].AsFloat(2.6f);
+    const float outgamma = (float)args[6].AsFloat(1.0f / 2.22222222f);
 
     int eyephase;
     if (!lstrcmpi(eye, "LEFT")) { eyephase = ASDCP::JP2K::SP_LEFT; }
     else if (!lstrcmpi(eye, "RIGHT")) { eyephase = ASDCP::JP2K::SP_RIGHT; }
     else env->ThrowError("MXFSource: eye must be either Left or Right");
 
-    PClip clip = new MXFSource(filename, key, hmac, entrypoint, eyephase, env);
+    PClip clip = new MXFSource(filename, key, hmac, entrypoint, eyephase, env, ingamma, outgamma);
 
     return clip;
 }
@@ -235,7 +306,7 @@ AVSValue __cdecl Create_MXFSource(AVSValue args, void*, IScriptEnvironment* env)
 extern "C" __declspec(dllexport) const char* __stdcall AvisynthPluginInit2(IScriptEnvironment* env)
 {
     env->AddFunction("MXFSource",
-	"s+[key]s[hmac]b[entrypoint]i[eye]s",
+        "s+[key]s[hmac]b[entrypoint]i[eye]s[ingamma]f[outgamma]f",
 	Create_MXFSource, 0);
     return "MXFSource";
 }
